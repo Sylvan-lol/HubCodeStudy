@@ -1,0 +1,55 @@
+# Environment files (contain sensitive information)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# Node
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test folders
+Hello-World/
+
+# Local storage
+storage/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test and temporary files
+test_analyze.py
+test-api.js
+need.txt
+solution.txt
+vivi.txt
