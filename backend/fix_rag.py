@@ -32,6 +32,7 @@ class RAGService:
         self.chat_history = []
         self.repo_overview_text = ""
         self.analysis_stats = {}
+        # ★ 保存所有文件的完整内容（source_lower -> full_content）★
         self.full_documents = {}
 
     def process_documents(self, documents, repo_name, repo_slug=None):
@@ -44,6 +45,7 @@ class RAGService:
         if not documents:
             raise ValueError("没有加载到任何文档，请检查仓库是否包含支持的文件类型")
 
+        # ★ 保留完整原始文档内容 ★
         self.full_documents = {}
         for doc in documents:
             source = (doc.metadata or {}).get("source", "")
@@ -300,40 +302,23 @@ class RAGService:
             if ext and len(ext) >= 2 and len(ext) <= 6:
                 candidates.add(word)
 
-        # ★ 核心修复：统一为正斜杠比较，解决 Windows 反斜杠路径匹配问题 ★
-        # 将 full_documents 的键统一转换为正斜杠，同时保留原始键
-        norm_full = {}
-        for orig_key in self.full_documents:
-            norm_key = orig_key.replace("\\", "/")
-            norm_full[norm_key] = orig_key
-
+        # 在 full_documents 中匹配
         for candidate in candidates:
-            candidate = candidate.strip().lower().replace("\\", "/").lstrip("/")
+            candidate = candidate.strip().lower()
             if not candidate:
                 continue
-
-            # 1. 直接精确匹配原始key
             if candidate in self.full_documents:
                 if candidate not in requested:
                     requested.append(candidate)
-                continue
-
-            # 2. 统一正斜杠后的精确匹配
-            if candidate in norm_full:
-                real_key = norm_full[candidate]
-                if real_key not in requested:
-                    requested.append(real_key)
-                continue
-
-            # 3. 后缀匹配：用户输入 fileRoutes.js → 找 backend/routes/fileRoutes.js
-            for norm_key, real_key in norm_full.items():
-                if norm_key.endswith("/" + candidate) or norm_key == candidate:
-                    if real_key not in requested:
-                        requested.append(real_key)
-                # 4. 包含匹配：如果 candidate 在 norm_key 中，且长度 > 3 避免误匹配
-                elif len(candidate) > 3 and candidate in norm_key:
-                    if real_key not in requested:
-                        requested.append(real_key)
+            else:
+                # 尝试模糊匹配：用户输入 main.py 匹配 src/main.py 或 app/main.py
+                for full_path in self.full_documents:
+                    if full_path.endswith(f"/{candidate}") or full_path.endswith(f"\\{candidate}"):
+                        if full_path not in requested:
+                            requested.append(full_path)
+                    elif candidate in full_path:
+                        if full_path not in requested:
+                            requested.append(full_path)
 
         return requested
 
@@ -341,12 +326,14 @@ class RAGService:
         if not self.doc_chunks:
             raise ValueError("分析数据不可用，请先处理仓库文件。")
 
+        # ★ 检测用户是否在询问具体文件 ★
         requested_files = self._detect_requested_files(question)
         has_full_file_context = len(requested_files) > 0
 
         top_chunks = self._retrieve_top_chunks(question, top_k=20)
         evidence_nonempty = len(top_chunks) > 0
 
+        # 聚合同一文件的相邻片段
         grouped = defaultdict(list)
         for chunk in top_chunks:
             source = chunk.metadata.get("source", "unknown")
@@ -358,8 +345,10 @@ class RAGService:
         yield {"type": "thought_done"}
         # ===== 思考过程结束 =====
 
+        # ★ 构建上下文：检索片段 + 完整文件内容 ★
         context_parts = []
 
+        # 第一部分：检索到的片段
         context_blocks = []
         for source, snippets in grouped.items():
             merged = "\n\n".join(snippets)[:3200]
@@ -367,11 +356,13 @@ class RAGService:
         if context_blocks:
             context_parts.append("【检索到的相关代码片段】\n" + "\n\n---\n\n".join(context_blocks[:12]))
 
+        # ★ 第二部分：完整文件内容（关键改进） ★
         if has_full_file_context:
             full_file_blocks = []
             for fpath in requested_files:
                 full_content = self.full_documents.get(fpath, "")
                 if full_content:
+                    # 单文件最多给4万字符
                     display_content = full_content[:40000]
                     full_file_blocks.append(f"【{fpath} 完整内容】\n```\n{display_content}\n```")
             if full_file_blocks:
@@ -385,6 +376,7 @@ class RAGService:
             else "https://github.com/OWNER/REPO/blob/HEAD/"
         )
 
+        # ★ 根据是否请求了具体文件，定制不同的 prompt ★
         if has_full_file_context:
             file_names = "、".join(requested_files)
             prompt = (
@@ -431,6 +423,7 @@ class RAGService:
                 answer_parts.append(content)
             yield {"type": "response", "content": content}
 
+        # 固定附加证据文件列表
         evidence_sources = []
         for source in grouped.keys():
             if source not in evidence_sources:
@@ -445,6 +438,7 @@ class RAGService:
                     lines.append(f"- {src}")
             yield {"type": "response", "content": "\n".join(lines)}
 
+        # 写入后端记忆
         full_answer = "".join(answer_parts).strip()
         effective = (
             len(full_answer) > 40
@@ -458,6 +452,7 @@ class RAGService:
             self.chat_history = self.chat_history[-40:]
 
     async def _generate_thought_stream(self, question, top_chunks, grouped):
+        """根据检索结果生成真实的思考过程"""
         sources = set()
         file_types = Counter()
         for chunk in top_chunks:

@@ -1,19 +1,27 @@
 <template>
   <div class="app-container">
     <header class="app-header">
-      <h1 class="app-title">GitChat - 智能代码仓库分析助手</h1>
-      <button v-if="analyzed" class="back-btn" @click="handleBack">
+      <div class="header-left">
+        <h1 class="app-title">GitChat - 智能代码仓库分析助手</h1>
+        <nav class="nav">
+          <router-link to="/" class="nav-link" active-class="active" exact-active-class="active">分析 / 聊天</router-link>
+          <router-link to="/benchmark" class="nav-link" active-class="active">可量化评测</router-link>
+        </nav>
+      </div>
+      <button
+        v-if="route.path === '/' && analyzed"
+        class="back-btn"
+        type="button"
+        @click="resetRepo"
+      >
         <el-icon><ArrowLeft /></el-icon> 重新分析仓库
       </button>
     </header>
-    
+
     <main class="app-main">
-      <transition name="fade" mode="out-in">
-        <RepoInput v-if="!analyzed" @success="handleRepoAnalyzed" key="repo-input" />
-        <ChatWindow v-else @back="handleBack" key="chat-window" />
-      </transition>
+      <router-view />
     </main>
-    
+
     <footer class="app-footer">
       <p>© 2026 GitChat. 企业级代码仓库分析助手</p>
     </footer>
@@ -21,33 +29,45 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, provide, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import RepoInput from './components/RepoInput.vue'
-import ChatWindow from './components/ChatWindow.vue'
 
+const route = useRoute()
 const analyzed = ref(false)
+const repoSlug = ref('')
 
-// 从本地存储加载状态
+const setRepoAnalyzed = (payload = {}) => {
+  analyzed.value = true
+  repoSlug.value = payload.repo_slug || payload.repoSlug || ''
+  localStorage.setItem('gitchat_analyzed', JSON.stringify(true))
+  if (repoSlug.value) {
+    localStorage.setItem('gitchat_repo_slug', repoSlug.value)
+  }
+}
+
+const resetRepo = () => {
+  analyzed.value = false
+  repoSlug.value = ''
+  localStorage.removeItem('gitchat_analyzed')
+  localStorage.removeItem('gitchat_repo_slug')
+  localStorage.removeItem('gitchat_messages')
+}
+
 onMounted(() => {
-  const savedState = localStorage.getItem('gitchat_analyzed')
-  if (savedState) {
-    analyzed.value = JSON.parse(savedState)
+  const saved = localStorage.getItem('gitchat_analyzed')
+  if (saved && JSON.parse(saved)) {
+    analyzed.value = true
+    repoSlug.value = localStorage.getItem('gitchat_repo_slug') || ''
   }
 })
 
-const handleRepoAnalyzed = () => {
-  analyzed.value = true
-  // 保存状态到本地存储
-  localStorage.setItem('gitchat_analyzed', JSON.stringify(true))
-}
-
-const handleBack = () => {
-  analyzed.value = false
-  // 清除本地存储
-  localStorage.removeItem('gitchat_analyzed')
-  localStorage.removeItem('gitchat_messages')
-}
+provide('gitchat', {
+  analyzed,
+  repoSlug,
+  setRepoAnalyzed,
+  resetRepo,
+})
 </script>
 
 <style scoped>
@@ -61,20 +81,52 @@ const handleBack = () => {
 .app-header {
   background: white;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-  padding: 20px 40px;
+  padding: 16px 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
   position: sticky;
   top: 0;
   z-index: 100;
 }
 
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .app-title {
   color: #333;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   margin: 0;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  color: #606266;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+}
+
+.nav-link:hover {
+  color: #409eff;
+}
+
+.nav-link.active {
+  color: #409eff;
+  font-weight: 600;
+  border-bottom-color: #409eff;
 }
 
 .back-btn {
@@ -110,17 +162,5 @@ const handleBack = () => {
   color: #606266;
   font-size: 14px;
   border-top: 1px solid #e4e7ed;
-}
-
-/* 动画效果 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.5s ease, transform 0.5s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(20px);
 }
 </style>

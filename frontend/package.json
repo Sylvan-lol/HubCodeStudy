@@ -18,7 +18,8 @@
     "element-plus": "^2.13.7",
     "marked": "^11.0.0",
     "normalize-wheel-es": "^1.2.0",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",

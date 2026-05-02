@@ -1,21 +1,31 @@
 import json
-import asyncio
-from fastapi import APIRouter, Body
+
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-# 关键：从 singleton 导入共享实例
+from pydantic import BaseModel
+
 from app.singleton import rag_service
 
 router = APIRouter()
 
+
+class ChatRequest(BaseModel):
+    message: str
+
+
 @router.post("/chat")
-async def chat_stream(message: str = Body(..., embed=True)):
+async def chat_stream(body: ChatRequest):
     async def event_generator():
         try:
-            async for content in rag_service.stream_answer(message):
-                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            async for chunk in rag_service.stream_answer(body.message):
+                if isinstance(chunk, dict):
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                else:
+                    # 兼容旧格式（纯字符串）
+                    yield f"data: {json.dumps({'type': 'response', 'content': chunk}, ensure_ascii=False)}\n\n"
         except Exception as e:
             error_msg = f"聊天服务暂不可用：{str(e)}"
-            yield f"data: {json.dumps({'content': error_msg}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'response', 'content': error_msg}, ensure_ascii=False)}\n\n"
 
         yield "data: [DONE]\n\n"
 
